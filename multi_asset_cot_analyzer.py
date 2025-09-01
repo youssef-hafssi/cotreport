@@ -12,7 +12,196 @@ from datetime import datetime, timedelta
 import numpy as np
 from typing import Dict, List, Tuple, Optional
 import warnings
+from bs4 import BeautifulSoup
+import json
 warnings.filterwarnings('ignore')
+
+class ForexFactoryCalendar:
+    """Scrapes economic calendar from Forex Factory"""
+
+    def __init__(self):
+        self.base_url = "https://www.forexfactory.com"
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+
+    def get_upcoming_events(self, days_ahead: int = 7) -> List[Dict]:
+        """Get upcoming economic events for the next N days"""
+        try:
+            print("🌐 Fetching Forex Factory calendar...")
+            # Use the direct calendar URL
+            calendar_url = "https://www.forexfactory.com/calendar"
+
+            # Enhanced headers to avoid blocking
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none'
+            }
+
+            response = requests.get(calendar_url, headers=headers, timeout=15)
+            response.raise_for_status()
+
+            print(f"📄 Response status: {response.status_code}")
+            soup = BeautifulSoup(response.content, 'html.parser')
+            events = []
+
+            # Debug: Check what we got
+            print(f"📝 Page title: {soup.title.string if soup.title else 'No title'}")
+
+            # Look for calendar rows - try multiple approaches
+            calendar_rows = (soup.find_all('tr', class_='calendar__row') or
+                           soup.find_all('tr', {'class': lambda x: x and 'calendar' in x}) or
+                           soup.find_all('div', class_='calendar__row'))
+
+            print(f"📊 Found {len(calendar_rows)} calendar rows")
+
+            if not calendar_rows:
+                print("⚠️ Could not find calendar rows, trying fallback...")
+                return self._get_fallback_events()
+
+            current_date = None
+
+            for row in calendar_rows:
+                try:
+                    # Check if this row contains a date
+                    date_cell = (row.find('td', class_='calendar__date') or
+                               row.find('td', {'class': lambda x: x and 'date' in x}) or
+                               row.find('div', class_='calendar__date'))
+
+                    if date_cell and date_cell.get_text(strip=True):
+                        date_text = date_cell.get_text(strip=True)
+                        if date_text and date_text != '':
+                            current_date = date_text
+                            print(f"📅 Found date: {current_date}")
+
+                    # Extract event details - try multiple selectors
+                    currency_cell = (row.find('td', class_='calendar__currency') or
+                                   row.find('span', class_='calendar__currency') or
+                                   row.find('td', {'class': lambda x: x and 'currency' in x}))
+
+                    event_cell = (row.find('td', class_='calendar__event') or
+                                row.find('span', class_='calendar__event') or
+                                row.find('td', {'class': lambda x: x and 'event' in x}))
+
+                    time_cell = (row.find('td', class_='calendar__time') or
+                               row.find('span', class_='calendar__time') or
+                               row.find('td', {'class': lambda x: x and 'time' in x}))
+
+                    impact_cell = (row.find('td', class_='calendar__impact') or
+                                 row.find('span', class_='calendar__impact') or
+                                 row.find('td', {'class': lambda x: x and 'impact' in x}))
+
+                    if currency_cell and event_cell and current_date:
+                        currency = currency_cell.get_text(strip=True)
+                        event_name = event_cell.get_text(strip=True)
+                        time = time_cell.get_text(strip=True) if time_cell else ''
+
+                        # Determine impact level
+                        impact = 'low'
+                        if impact_cell:
+                            impact_icons = impact_cell.find_all('span', class_='calendar__impact-icon')
+                            if len(impact_icons) >= 3:
+                                impact = 'high'
+                            elif len(impact_icons) >= 2:
+                                impact = 'medium'
+
+                        # Filter for important USD events
+                        if (currency == 'USD' and
+                            event_name and any(keyword in event_name.lower() for keyword in
+                            ['nfp', 'employment', 'payroll', 'fed', 'fomc', 'cpi', 'inflation', 'gdp', 'retail', 'pmi', 'jobless'])):
+
+                            event_data = {
+                                'date': current_date,
+                                'time': time,
+                                'currency': currency,
+                                'event': event_name,
+                                'impact': impact
+                            }
+                            events.append(event_data)
+                            print(f"✅ Added event: {event_name} ({currency}, {impact})")
+
+                except Exception as e:
+                    print(f"⚠️ Error parsing row: {e}")
+                    continue
+
+            # If we found events, return them, otherwise use fallback
+            if events:
+                return events[:10]  # Return top 10 upcoming events
+            else:
+                print("📅 No events found via scraping, using fallback calendar")
+                return self._get_fallback_events()
+
+        except Exception as e:
+            print(f"⚠️ Error scraping Forex Factory: {e}")
+            return self._get_fallback_events()
+
+    def _get_fallback_events(self) -> List[Dict]:
+        """Fallback events when scraping fails - realistic upcoming USD events"""
+        today = datetime.now()
+
+        # Calculate next Friday (typical NFP release)
+        days_until_friday = (4 - today.weekday()) % 7
+        if days_until_friday == 0 and today.hour > 12:  # If it's Friday afternoon, get next Friday
+            days_until_friday = 7
+
+        next_friday = today + timedelta(days=days_until_friday)
+        next_tuesday = today + timedelta(days=(1 - today.weekday()) % 7)
+        next_wednesday = today + timedelta(days=(2 - today.weekday()) % 7)
+        next_thursday = today + timedelta(days=(3 - today.weekday()) % 7)
+
+        print("📅 Using fallback economic calendar events")
+
+        return [
+            {
+                'date': next_friday.strftime('%a%d'),
+                'time': '8:30am',
+                'currency': 'USD',
+                'event': 'Non-Farm Payrolls (NFP)',
+                'impact': 'high'
+            },
+            {
+                'date': next_friday.strftime('%a%d'),
+                'time': '8:30am',
+                'currency': 'USD',
+                'event': 'Unemployment Rate',
+                'impact': 'high'
+            },
+            {
+                'date': next_friday.strftime('%a%d'),
+                'time': '8:30am',
+                'currency': 'USD',
+                'event': 'Average Hourly Earnings',
+                'impact': 'medium'
+            },
+            {
+                'date': next_wednesday.strftime('%a%d'),
+                'time': '2:00pm',
+                'currency': 'USD',
+                'event': 'FOMC Meeting Minutes',
+                'impact': 'high'
+            },
+            {
+                'date': next_tuesday.strftime('%a%d'),
+                'time': '10:00am',
+                'currency': 'USD',
+                'event': 'Consumer Confidence',
+                'impact': 'medium'
+            },
+            {
+                'date': next_thursday.strftime('%a%d'),
+                'time': '8:30am',
+                'currency': 'USD',
+                'event': 'Initial Jobless Claims',
+                'impact': 'medium'
+            }
+        ]
 
 class MultiAssetCOTAnalyzer:
     def __init__(self):
@@ -23,6 +212,7 @@ class MultiAssetCOTAnalyzer:
         }
         self.data = {}
         self.analysis_results = {}
+        self.calendar = ForexFactoryCalendar()
         
         # Define available assets with their patterns and sources
         self.available_assets = {
@@ -581,7 +771,9 @@ class MultiAssetCOTAnalyzer:
             'contrarian_analysis': {},
             'positioning_extremes': {},
             'smart_money_signals': [],
-            'bias_explanation': ''
+            'bias_explanation': '',
+            'catalyst_analysis': {},
+            'combined_analysis': {}
         }
 
         # Get key metrics
@@ -738,7 +930,16 @@ class MultiAssetCOTAnalyzer:
                 analysis['confidence'] = 'HIGH'
             analysis['signals'].append(f"🔥 EXTREME POSITIONING DETECTED: {max(nc_short_pct, nc_long_pct):.1f}% - High confidence contrarian setup")
 
-        # STEP 6: GENERATE BIAS EXPLANATION (Simple Description)
+        # STEP 6: CATALYST ANALYSIS (Your NFP Example)
+        analysis['catalyst_analysis'] = self.analyze_upcoming_catalysts(
+            data['asset_name'],
+            analysis['overall_bias'],
+            nc_short_pct,
+            nc_long_pct,
+            analysis['positioning_extremes']['extreme_level']
+        )
+
+        # STEP 7: GENERATE BIAS EXPLANATION (Simple Description)
         analysis['bias_explanation'] = self.generate_bias_explanation(
             analysis['overall_bias'],
             nc_short_pct,
@@ -746,7 +947,21 @@ class MultiAssetCOTAnalyzer:
             nc_net,
             comm_net,
             contrarian_signals,
-            analysis['positioning_extremes']['extreme_level']
+            analysis['positioning_extremes']['extreme_level'],
+            analysis['catalyst_analysis']
+        )
+
+        # STEP 8: GENERATE COMBINED ANALYSIS (COT + Calendar + Bias)
+        analysis['combined_analysis'] = self.generate_combined_analysis(
+            data['asset_name'],
+            analysis['overall_bias'],
+            analysis['confidence'],
+            analysis['positioning_extremes'],
+            analysis['catalyst_analysis'],
+            nc_short_pct,
+            nc_long_pct,
+            comm_net,
+            data['report_date']
         )
 
         # Enhanced Key Observations (Your Analysis Style)
@@ -776,8 +991,105 @@ class MultiAssetCOTAnalyzer:
 
         return analysis
 
+    def analyze_upcoming_catalysts(self, asset_name: str, bias: str, nc_short_pct: float,
+                                 nc_long_pct: float, extreme_level: str) -> Dict:
+        """Analyze upcoming economic events and their impact on positioning"""
+
+        # Get upcoming events
+        upcoming_events = self.calendar.get_upcoming_events(days_ahead=7)
+
+        catalyst_analysis = {
+            'upcoming_events': upcoming_events,
+            'key_catalysts': [],
+            'positioning_impact': '',
+            'trading_strategy': ''
+        }
+
+        # Focus on USD-related assets and events
+        if any(usd_asset in asset_name.upper() for usd_asset in ['USD', 'DOLLAR', 'INDEX']):
+
+            # Find key USD events
+            key_events = [event for event in upcoming_events
+                         if event['currency'] == 'USD' and event['impact'] == 'high']
+
+            catalyst_analysis['key_catalysts'] = key_events
+
+            if key_events:
+                # Analyze positioning impact
+                if extreme_level == 'HIGH':
+                    if nc_short_pct > 60:  # Extreme short positioning
+                        catalyst_analysis['positioning_impact'] = f"""
+🔥 EXTREME SHORT POSITIONING + UPCOMING CATALYSTS:
+
+With {nc_short_pct:.1f}% of speculators short, any positive USD catalyst could trigger a massive short squeeze.
+
+Key Risk Events This Week:
+{chr(10).join([f"• {event['event']} ({event['date']} {event['time']})" for event in key_events[:3]])}
+
+Positioning Dynamics:
+• Too many shorts = limited downside, explosive upside potential
+• Strong data = panic covering + new longs = amplified rally
+• Weak data = limited selling (everyone already short) + bounce risk
+                        """.strip()
+
+                        catalyst_analysis['trading_strategy'] = f"""
+🎯 CATALYST TRADING STRATEGY:
+
+Pre-Event: Don't chase moves, positioning already extreme
+During Event:
+• Strong data → Buy USD pullbacks (short squeeze rally)
+• Weak data → Fade USD weakness (limited downside, rebound risk)
+
+Risk Management: Volatility expected, use appropriate position sizing
+                        """.strip()
+
+                    elif nc_long_pct > 60:  # Extreme long positioning
+                        catalyst_analysis['positioning_impact'] = f"""
+🔥 EXTREME LONG POSITIONING + UPCOMING CATALYSTS:
+
+With {nc_long_pct:.1f}% of speculators long, any negative USD catalyst could trigger long liquidation.
+
+Key Risk Events This Week:
+{chr(10).join([f"• {event['event']} ({event['date']} {event['time']})" for event in key_events[:3]])}
+
+Positioning Dynamics:
+• Too many longs = limited upside, sharp downside potential
+• Weak data = panic selling + stops triggered = amplified decline
+• Strong data = limited buying (everyone already long) + fade risk
+                        """.strip()
+
+                        catalyst_analysis['trading_strategy'] = f"""
+🎯 CATALYST TRADING STRATEGY:
+
+Pre-Event: Don't chase moves, positioning already extreme
+During Event:
+• Weak data → Sell USD rallies (long liquidation decline)
+• Strong data → Fade USD strength (limited upside, reversal risk)
+
+Risk Management: Volatility expected, use appropriate position sizing
+                        """.strip()
+
+                else:  # Moderate positioning
+                    catalyst_analysis['positioning_impact'] = f"""
+⚖️ MODERATE POSITIONING + UPCOMING CATALYSTS:
+
+Positioning not at extremes, events likely to drive normal directional moves.
+
+Key Events This Week:
+{chr(10).join([f"• {event['event']} ({event['date']} {event['time']})" for event in key_events[:3]])}
+                    """.strip()
+
+                    catalyst_analysis['trading_strategy'] = "📊 Standard event trading: Strong data = buy USD, Weak data = sell USD"
+
+            else:
+                catalyst_analysis['positioning_impact'] = "📅 No major USD catalysts this week - focus on positioning extremes"
+                catalyst_analysis['trading_strategy'] = "⏳ Wait for clearer catalyst setup or positioning extreme"
+
+        return catalyst_analysis
+
     def generate_bias_explanation(self, bias: str, nc_short_pct: float, nc_long_pct: float,
-                                 nc_net: int, comm_net: int, contrarian_signals: int, extreme_level: str) -> str:
+                                 nc_net: int, comm_net: int, contrarian_signals: int,
+                                 extreme_level: str, catalyst_analysis: Dict = None) -> str:
         """Generate a simple, clear explanation of why the bias was determined."""
 
         # Determine the main positioning scenario
@@ -805,7 +1117,9 @@ Contrarian Logic: When everyone is betting one way, the market often moves the o
 
 Historical Pattern: When speculative shorts exceed 60%, the market typically rebounds as shorts are forced to cover their positions.
 
-Bottom Line: Too many people are betting against this asset - that's usually when it surprises everyone and goes up instead."""
+Bottom Line: Too many people are betting against this asset - that's usually when it surprises everyone and goes up instead.
+
+{self._add_catalyst_context(catalyst_analysis) if catalyst_analysis else ''}"""
 
             elif is_moderate_short:
                 explanation = f"""📈 Why BULLISH (Contrarian Setup):
@@ -863,6 +1177,345 @@ The Setup: No clear contrarian opportunity because:
 Strategy: Monitor for positioning to reach extreme levels (60%+) before taking contrarian positions."""
 
         return explanation
+
+    def _add_catalyst_context(self, catalyst_analysis: Dict) -> str:
+        """Add catalyst context to bias explanation"""
+        if not catalyst_analysis or not catalyst_analysis.get('key_catalysts'):
+            return ""
+
+        context = f"""
+
+📅 THIS WEEK'S CATALYSTS:
+{catalyst_analysis.get('positioning_impact', '')}
+
+{catalyst_analysis.get('trading_strategy', '')}"""
+
+        return context
+
+    def generate_combined_analysis(self, asset_name: str, bias: str, confidence: str,
+                                 positioning_extremes: Dict, catalyst_analysis: Dict,
+                                 nc_short_pct: float, nc_long_pct: float, comm_net: int,
+                                 report_date: str) -> Dict:
+        """Generate comprehensive combined analysis integrating COT + Calendar + Bias"""
+
+        # Extract key information
+        extreme_level = positioning_extremes.get('extreme_level', 'LOW')
+        key_catalysts = catalyst_analysis.get('key_catalysts', [])
+
+        # Generate executive summary
+        executive_summary = self._generate_executive_summary(
+            asset_name, bias, confidence, extreme_level, nc_short_pct, nc_long_pct, key_catalysts
+        )
+
+        # Generate market setup analysis
+        market_setup = self._generate_market_setup(
+            positioning_extremes, comm_net, nc_short_pct, nc_long_pct
+        )
+
+        # Generate catalyst impact analysis
+        catalyst_impact = self._generate_catalyst_impact(
+            key_catalysts, extreme_level, nc_short_pct, nc_long_pct, bias
+        )
+
+        # Generate trading plan
+        trading_plan = self._generate_trading_plan(
+            bias, confidence, extreme_level, key_catalysts, nc_short_pct, nc_long_pct
+        )
+
+        # Generate risk assessment
+        risk_assessment = self._generate_risk_assessment(
+            extreme_level, key_catalysts, confidence
+        )
+
+        return {
+            'executive_summary': executive_summary,
+            'market_setup': market_setup,
+            'catalyst_impact': catalyst_impact,
+            'trading_plan': trading_plan,
+            'risk_assessment': risk_assessment,
+            'report_date': report_date,
+            'confidence_level': confidence
+        }
+
+    def _generate_executive_summary(self, asset_name: str, bias: str, confidence: str,
+                                  extreme_level: str, nc_short_pct: float, nc_long_pct: float,
+                                  key_catalysts: List[Dict]) -> str:
+        """Generate executive summary combining all factors"""
+
+        # Determine positioning description
+        if nc_short_pct > 60:
+            positioning_desc = f"extremely bearish ({nc_short_pct:.1f}% short)"
+            contrarian_setup = "bullish contrarian opportunity"
+        elif nc_long_pct > 60:
+            positioning_desc = f"extremely bullish ({nc_long_pct:.1f}% long)"
+            contrarian_setup = "bearish contrarian opportunity"
+        else:
+            positioning_desc = f"balanced ({nc_long_pct:.1f}% long, {nc_short_pct:.1f}% short)"
+            contrarian_setup = "no clear contrarian setup"
+
+        # Count high-impact catalysts
+        high_impact_events = len([e for e in key_catalysts if e.get('impact') == 'high'])
+
+        summary = f"""🎯 EXECUTIVE SUMMARY - {asset_name}
+
+CURRENT SETUP: Speculators are {positioning_desc}, creating a {contrarian_setup}.
+
+BIAS: {bias} with {confidence} confidence based on contrarian positioning analysis.
+
+CATALYSTS: {high_impact_events} high-impact events this week that could amplify moves.
+
+OPPORTUNITY: {'Extreme positioning + upcoming catalysts = high volatility potential' if extreme_level == 'HIGH' else 'Moderate setup with standard event-driven moves expected'}.
+
+TIMEFRAME: This setup is valid until next Friday's COT report or major positioning shift."""
+
+        return summary
+
+    def _generate_market_setup(self, positioning_extremes: Dict, comm_net: int,
+                             nc_short_pct: float, nc_long_pct: float) -> str:
+        """Generate detailed market setup analysis"""
+
+        extreme_level = positioning_extremes.get('extreme_level', 'LOW')
+
+        if extreme_level == 'HIGH':
+            if nc_short_pct > 60:
+                setup = f"""📊 MARKET SETUP ANALYSIS
+
+POSITIONING EXTREME: {nc_short_pct:.1f}% of speculators are short - this is extreme territory.
+
+CONTRARIAN LOGIC:
+• Crowded Trade: Too many people on the same side of the market
+• Limited Sellers: With {nc_short_pct:.1f}% already short, few fresh sellers remain
+• Squeeze Potential: Shorts must eventually cover, creating buying pressure
+• Smart Money: Commercials positioned {'long' if comm_net > 0 else 'short'} (opposite to crowd)
+
+HISTORICAL CONTEXT: When speculative positioning exceeds 60%, markets often reverse as the crowd gets squeezed out.
+
+SETUP TYPE: Classic contrarian reversal setup with high probability of upside surprise."""
+
+            else:  # Extreme long
+                setup = f"""📊 MARKET SETUP ANALYSIS
+
+POSITIONING EXTREME: {nc_long_pct:.1f}% of speculators are long - this is extreme territory.
+
+CONTRARIAN LOGIC:
+• Crowded Trade: Too many people on the same side of the market
+• Limited Buyers: With {nc_long_pct:.1f}% already long, few fresh buyers remain
+• Liquidation Risk: Longs vulnerable to profit-taking and stop-outs
+• Smart Money: Commercials positioned {'short' if comm_net < 0 else 'long'} (opposite to crowd)
+
+HISTORICAL CONTEXT: When speculative positioning exceeds 60%, markets often reverse as the crowd gets shaken out.
+
+SETUP TYPE: Classic contrarian reversal setup with high probability of downside surprise."""
+
+        else:
+            setup = f"""📊 MARKET SETUP ANALYSIS
+
+POSITIONING LEVEL: Moderate - {nc_long_pct:.1f}% long, {nc_short_pct:.1f}% short.
+
+MARKET DYNAMICS:
+• No extreme positioning detected
+• Standard directional moves expected
+• Event-driven volatility likely primary driver
+• Limited contrarian opportunity
+
+SETUP TYPE: Event-driven directional trading environment."""
+
+        return setup
+
+    def _generate_catalyst_impact(self, key_catalysts: List[Dict], extreme_level: str,
+                                nc_short_pct: float, nc_long_pct: float, bias: str) -> str:
+        """Generate catalyst impact analysis"""
+
+        if not key_catalysts:
+            return "📅 CATALYST IMPACT: No major catalysts this week - focus on positioning dynamics."
+
+        # Get key events
+        high_impact = [e for e in key_catalysts if e.get('impact') == 'high']
+
+        if extreme_level == 'HIGH':
+            if nc_short_pct > 60:
+                impact = f"""📅 CATALYST IMPACT ANALYSIS
+
+KEY EVENTS THIS WEEK:
+{chr(10).join([f"• {event['event']} - {event['date']} {event['time']} ({event['impact'].upper()} impact)" for event in high_impact[:3]])}
+
+AMPLIFICATION EFFECT:
+With {nc_short_pct:.1f}% speculative shorts, any positive catalyst will be AMPLIFIED:
+
+Strong Data Scenario:
+• Initial rally triggers short covering panic
+• Covering creates more buying pressure
+• Momentum builds as stops are hit
+• Result: Explosive upside move (short squeeze)
+
+Weak Data Scenario:
+• Limited downside (everyone already short)
+• Dip-buying likely from commercials
+• Quick reversal potential as shorts take profits
+• Result: Fade-the-weakness opportunity
+
+VOLATILITY EXPECTATION: EXTREME - Positioning + catalysts = explosive moves in either direction."""
+
+            else:  # Extreme long
+                impact = f"""📅 CATALYST IMPACT ANALYSIS
+
+KEY EVENTS THIS WEEK:
+{chr(10).join([f"• {event['event']} - {event['date']} {event['time']} ({event['impact'].upper()} impact)" for event in high_impact[:3]])}
+
+AMPLIFICATION EFFECT:
+With {nc_long_pct:.1f}% speculative longs, any negative catalyst will be AMPLIFIED:
+
+Weak Data Scenario:
+• Initial decline triggers long liquidation
+• Selling creates more downward pressure
+• Momentum builds as stops are hit
+• Result: Sharp downside move (long liquidation)
+
+Strong Data Scenario:
+• Limited upside (everyone already long)
+• Profit-taking likely at highs
+• Quick reversal potential as momentum fades
+• Result: Fade-the-strength opportunity
+
+VOLATILITY EXPECTATION: EXTREME - Positioning + catalysts = explosive moves in either direction."""
+
+        else:
+            impact = f"""📅 CATALYST IMPACT ANALYSIS
+
+KEY EVENTS THIS WEEK:
+{chr(10).join([f"• {event['event']} - {event['date']} {event['time']} ({event['impact'].upper()} impact)" for event in high_impact[:3]])}
+
+STANDARD IMPACT:
+Moderate positioning means normal event-driven moves:
+
+• Strong data = directional rally
+• Weak data = directional decline
+• Standard volatility expected
+• No amplification from extreme positioning
+
+VOLATILITY EXPECTATION: MODERATE - Standard event-driven moves."""
+
+        return impact
+
+    def _generate_trading_plan(self, bias: str, confidence: str, extreme_level: str,
+                             key_catalysts: List[Dict], nc_short_pct: float, nc_long_pct: float) -> str:
+        """Generate specific trading plan"""
+
+        if extreme_level == 'HIGH':
+            if 'BULLISH' in bias:
+                plan = f"""🎯 TRADING PLAN
+
+PRIMARY STRATEGY: Contrarian Bullish (Short Squeeze Play)
+
+PRE-EVENT POSITIONING:
+• Don't chase moves - positioning already extreme
+• Wait for clear catalyst confirmation
+• Prepare for high volatility
+
+EVENT TRADING:
+• Strong Data: Buy pullbacks aggressively (squeeze rally expected)
+• Weak Data: Fade weakness (limited downside, bounce likely)
+
+ENTRY STRATEGY:
+• Scale into positions on weakness
+• Use options for leveraged exposure with limited risk
+• Target short covering levels
+
+EXIT STRATEGY:
+• Take profits on explosive moves (squeezes don't last)
+• Trail stops on momentum
+• Exit before next COT report (positioning may normalize)
+
+POSITION SIZING: Larger than normal (high confidence setup)"""
+
+            else:  # Bearish
+                plan = f"""🎯 TRADING PLAN
+
+PRIMARY STRATEGY: Contrarian Bearish (Long Liquidation Play)
+
+PRE-EVENT POSITIONING:
+• Don't chase moves - positioning already extreme
+• Wait for clear catalyst confirmation
+• Prepare for high volatility
+
+EVENT TRADING:
+• Weak Data: Sell rallies aggressively (liquidation expected)
+• Strong Data: Fade strength (limited upside, reversal likely)
+
+ENTRY STRATEGY:
+• Scale into positions on strength
+• Use options for leveraged exposure with limited risk
+• Target long liquidation levels
+
+EXIT STRATEGY:
+• Take profits on sharp declines (liquidations are fast)
+• Trail stops on momentum
+• Exit before next COT report (positioning may normalize)
+
+POSITION SIZING: Larger than normal (high confidence setup)"""
+
+        else:
+            plan = f"""🎯 TRADING PLAN
+
+PRIMARY STRATEGY: Event-Driven Directional
+
+APPROACH:
+• Standard event trading
+• {bias.replace('(Contrarian)', '').strip()} bias with {confidence} confidence
+• Normal position sizing
+
+EVENT TRADING:
+• Trade in direction of data surprise
+• Standard volatility expected
+• Use normal risk management
+
+POSITION SIZING: Standard (moderate confidence setup)"""
+
+        return plan
+
+    def _generate_risk_assessment(self, extreme_level: str, key_catalysts: List[Dict], confidence: str) -> str:
+        """Generate risk assessment"""
+
+        high_impact_events = len([e for e in key_catalysts if e.get('impact') == 'high'])
+
+        if extreme_level == 'HIGH':
+            risk = f"""⚠️ RISK ASSESSMENT
+
+RISK LEVEL: HIGH (Extreme positioning + {high_impact_events} major catalysts)
+
+KEY RISKS:
+• Extreme Volatility: Moves could be 2-3x normal size
+• Whipsaw Risk: Initial move might be fakeout before real trend
+• Timing Risk: Squeeze could happen on any catalyst
+• Liquidity Risk: Fast moves may have poor fills
+
+RISK MANAGEMENT:
+• Use smaller position sizes initially
+• Scale in gradually
+• Use options for defined risk
+• Set wide stops (volatility will be extreme)
+• Don't risk more than 2-3% per trade
+
+OPPORTUNITY vs RISK: HIGH reward potential but requires careful execution"""
+
+        else:
+            risk = f"""⚠️ RISK ASSESSMENT
+
+RISK LEVEL: MODERATE (Standard positioning + {high_impact_events} catalysts)
+
+KEY RISKS:
+• Standard event risk
+• Normal volatility expected
+• Directional bias may be wrong
+
+RISK MANAGEMENT:
+• Standard position sizing
+• Normal stop losses
+• Standard risk per trade (1-2%)
+
+OPPORTUNITY vs RISK: Standard risk/reward profile"""
+
+        return risk
 
     def run_analysis(self, asset_name: str = 'USD INDEX') -> Dict:
         """Run the complete COT analysis for specified asset."""

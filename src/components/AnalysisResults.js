@@ -27,7 +27,9 @@ import {
   Activity,
   ArrowUp,
   ArrowDown,
-  BookOpen
+  BookOpen,
+  Clock,
+  Zap
 } from 'lucide-react';
 
 
@@ -589,6 +591,87 @@ const AnalysisResults = ({ analysis }) => {
                   {analysis.analysis.bias_explanation}
                 </div>
               </div>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Catalyst Analysis */}
+      {analysis.analysis.catalyst_analysis && analysis.analysis.catalyst_analysis.key_catalysts &&
+       analysis.analysis.catalyst_analysis.key_catalysts.length > 0 && (
+        <Card className="shadow-xl border-0 bg-white">
+          <CardHeader className="pb-4 bg-gradient-to-r from-orange-600 to-red-600">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-lg">
+                <Zap className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-white">Upcoming Catalysts</h3>
+                <p className="text-orange-100 text-sm mt-1">Economic events that could impact positioning</p>
+              </div>
+              <div className="ml-auto">
+                <Chip size="sm" color="default" variant="flat" className="bg-white/20 text-white border-white/30">
+                  This Week
+                </Chip>
+              </div>
+            </div>
+          </CardHeader>
+          <CardBody className="pt-0">
+            <div className="space-y-6">
+              {/* Upcoming Events */}
+              <div>
+                <h4 className="font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  Key Events This Week
+                </h4>
+                <div className="space-y-3">
+                  {analysis.analysis.catalyst_analysis.key_catalysts.slice(0, 5).map((event, index) => (
+                    <div key={index} className="flex items-center justify-between p-4 bg-gradient-to-r from-slate-50 to-gray-50 rounded-lg border border-slate-200">
+                      <div className="flex items-center gap-4">
+                        <div className="text-center">
+                          <div className="text-sm font-semibold text-slate-600">{event.date}</div>
+                          <div className="text-xs text-slate-500">{event.time}</div>
+                        </div>
+                        <div>
+                          <div className="font-semibold text-slate-800">{event.event}</div>
+                          <div className="text-sm text-slate-600">{event.currency}</div>
+                        </div>
+                      </div>
+                      <Chip
+                        size="sm"
+                        color={event.impact === 'high' ? 'danger' : event.impact === 'medium' ? 'warning' : 'default'}
+                        variant="flat"
+                      >
+                        {event.impact.toUpperCase()}
+                      </Chip>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Positioning Impact */}
+              {analysis.analysis.catalyst_analysis.positioning_impact && (
+                <div>
+                  <h4 className="font-semibold text-slate-700 mb-3">Positioning Impact</h4>
+                  <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-4 rounded-lg border border-yellow-200">
+                    <div className="whitespace-pre-line text-slate-700 text-sm leading-relaxed">
+                      {analysis.analysis.catalyst_analysis.positioning_impact}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Trading Strategy */}
+              {analysis.analysis.catalyst_analysis.trading_strategy && (
+                <div>
+                  <h4 className="font-semibold text-slate-700 mb-3">Catalyst Trading Strategy</h4>
+                  <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border border-green-200">
+                    <div className="whitespace-pre-line text-slate-700 text-sm leading-relaxed">
+                      {analysis.analysis.catalyst_analysis.trading_strategy}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </CardBody>
         </Card>
