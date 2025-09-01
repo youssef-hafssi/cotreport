@@ -1,0 +1,57 @@
+{
+  "data": {
+    "report_date": "26/Aug/2025",
+    "total_open_interest": 31488,
+    "non_commercial_long": 13158,
+    "non_commercial_short": 19263,
+    "spreading": 2812,
+    "commercial_long": 12326,
+    "commercial_short": 6163,
+    "total_long": 28296,
+    "total_short": 28238,
+    "nonreportable_long": 3192,
+    "nonreportable_short": 3250,
+    "changes": [
+      1799,
+      1916,
+      604,
+      1048,
+      -55,
+      3451,
+      2465,
+      -854,
+      132
+    ]
+  },
+  "metrics": {
+    "non_commercial_net": -6105,
+    "commercial_net": 6163,
+    "non_commercial_long_pct": 41,
+    "non_commercial_short_pct": 61,
+    "commercial_long_pct": 39,
+    "commercial_short_pct": 19,
+    "non_commercial_ratio": 0,
+    "commercial_ratio": 2,
+    "nc_long_change": 1916,
+    "nc_short_change": 604,
+    "nc_net_change": 1312
+  },
+  "analysis": {
+    "overall_bias": "STRONGLY BEARISH",
+    "confidence": "HIGH",
+    "signals": [
+      "Large speculators (non-commercial) are net SHORT - BEARISH signal",
+      "Speculators SHORT vs Commercials LONG - Classic BEARISH setup",
+      "High speculative short interest (61.2%) - Strong BEARISH sentiment",
+      "Large increase in speculative net long positions (+1312) - BULLISH momentum",
+      "Weak long/short ratio (0.68) - BEARISH bias"
+    ],
+    "key_observations": [
+      "Total Open Interest: 31,488 contracts",
+      "Non-Commercial Net Position: -6,105 contracts",
+      "Commercial Net Position: 6,163 contracts",
+      "Speculative Long %: 41.8%",
+      "Speculative Short %: 61.2%"
+    ]
+  }
+}

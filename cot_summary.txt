@@ -1,0 +1,15 @@
+USD Index COT Analysis Summary
+========================================
+Date: 26/Aug/2025
+Overall Bias: STRONGLY BEARISH
+Confidence: HIGH
+Open Interest: 31488
+NC Net Position: -6105
+Commercial Net: 6163
+
+Signals:
+1. Large speculators (non-commercial) are net SHORT - BEARISH signal
+2. Speculators SHORT vs Commercials LONG - Classic BEARISH setup
+3. High speculative short interest (61.2%) - Strong BEARISH sentiment
+4. Large increase in speculative net long positions (+1312) - BULLISH momentum
+5. Weak long/short ratio (0.68) - BEARISH bias
