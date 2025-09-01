@@ -572,95 +572,297 @@ class MultiAssetCOTAnalyzer:
         return metrics
 
     def analyze_directional_bias(self, data: Dict, metrics: Dict) -> Dict:
-        """Analyze the data to determine directional bias."""
+        """Analyze the data using sophisticated contrarian COT logic."""
         analysis = {
             'overall_bias': 'NEUTRAL',
             'confidence': 'LOW',
             'signals': [],
-            'key_observations': []
+            'key_observations': [],
+            'contrarian_analysis': {},
+            'positioning_extremes': {},
+            'smart_money_signals': [],
+            'bias_explanation': ''
         }
 
-        bullish_signals = 0
-        bearish_signals = 0
-
-        # 1. Non-Commercial Net Position Analysis
+        # Get key metrics
         nc_net = metrics['non_commercial_net']
-        if nc_net > 5000:  # Significantly net long
-            analysis['signals'].append("Large speculators (non-commercial) are net LONG - BULLISH signal")
-            bullish_signals += 2
-        elif nc_net < -5000:  # Significantly net short
-            analysis['signals'].append("Large speculators (non-commercial) are net SHORT - BEARISH signal")
-            bearish_signals += 2
-
-        # 2. Commercial vs Non-Commercial Positioning
         comm_net = metrics['commercial_net']
-        if nc_net > 0 and comm_net < 0:
-            analysis['signals'].append("Speculators LONG vs Commercials SHORT - Classic BULLISH setup")
-            bullish_signals += 1
-        elif nc_net < 0 and comm_net > 0:
-            analysis['signals'].append("Speculators SHORT vs Commercials LONG - Classic BEARISH setup")
-            bearish_signals += 1
-
-        # 3. Extreme Positioning Analysis
         nc_long_pct = metrics.get('non_commercial_long_pct', 0)
         nc_short_pct = metrics.get('non_commercial_short_pct', 0)
+        total_oi = data['total_open_interest']
 
-        if nc_long_pct > 50:
-            analysis['signals'].append(f"High speculative long interest ({nc_long_pct:.1f}%) - Strong BULLISH sentiment")
-            bullish_signals += 1
-        elif nc_short_pct > 50:
-            analysis['signals'].append(f"High speculative short interest ({nc_short_pct:.1f}%) - Strong BEARISH sentiment")
-            bearish_signals += 1
+        # STEP 1: EXTREME POSITIONING ANALYSIS (Your Key Insight)
+        extreme_threshold = 60.0  # When specs exceed 60%, market is at extreme
 
-        # 4. Weekly Changes Analysis
-        if 'nc_net_change' in metrics:
-            nc_change = metrics['nc_net_change']
-            if nc_change > 1000:
-                analysis['signals'].append(f"Large increase in speculative net long positions (+{nc_change}) - BULLISH momentum")
-                bullish_signals += 1
-            elif nc_change < -1000:
-                analysis['signals'].append(f"Large decrease in speculative net positions ({nc_change}) - BEARISH momentum")
-                bearish_signals += 1
+        analysis['positioning_extremes'] = {
+            'speculative_short_pct': nc_short_pct,
+            'speculative_long_pct': nc_long_pct,
+            'is_extreme_short': nc_short_pct > extreme_threshold,
+            'is_extreme_long': nc_long_pct > extreme_threshold,
+            'extreme_level': 'HIGH' if max(nc_short_pct, nc_long_pct) > extreme_threshold else 'MODERATE' if max(nc_short_pct, nc_long_pct) > 55 else 'LOW'
+        }
 
-        # 5. Ratio Analysis
-        if 'non_commercial_ratio' in metrics:
-            nc_ratio = metrics['non_commercial_ratio']
-            if nc_ratio > 1.5:
-                analysis['signals'].append(f"Strong long/short ratio ({nc_ratio:.2f}) - BULLISH bias")
-                bullish_signals += 1
-            elif nc_ratio < 0.7:
-                analysis['signals'].append(f"Weak long/short ratio ({nc_ratio:.2f}) - BEARISH bias")
-                bearish_signals += 1
+        # STEP 2: CONTRARIAN LOGIC (Your Core Method)
+        contrarian_signals = 0
+        trend_following_signals = 0
 
-        # Determine overall bias
-        signal_diff = bullish_signals - bearish_signals
+        # Extreme Short Positioning = Contrarian Bullish
+        if nc_short_pct > extreme_threshold:
+            contrarian_signals += 3
+            analysis['signals'].append(f"🔥 EXTREME SHORT POSITIONING: Speculators {nc_short_pct:.1f}% short - CONTRARIAN BULLISH signal")
+            analysis['signals'].append("📈 Crowded short trade - fuel for potential squeeze")
 
-        if signal_diff >= 3:
-            analysis['overall_bias'] = 'STRONGLY BULLISH'
+        # Extreme Long Positioning = Contrarian Bearish
+        elif nc_long_pct > extreme_threshold:
+            contrarian_signals -= 3
+            analysis['signals'].append(f"🔥 EXTREME LONG POSITIONING: Speculators {nc_long_pct:.1f}% long - CONTRARIAN BEARISH signal")
+            analysis['signals'].append("📉 Crowded long trade - vulnerable to selling pressure")
+
+        # Moderate positioning - less contrarian signal
+        elif nc_short_pct > 55:
+            contrarian_signals += 1
+            analysis['signals'].append(f"⚠️ HIGH SHORT POSITIONING: Speculators {nc_short_pct:.1f}% short - Moderate contrarian bullish")
+        elif nc_long_pct > 55:
+            contrarian_signals -= 1
+            analysis['signals'].append(f"⚠️ HIGH LONG POSITIONING: Speculators {nc_long_pct:.1f}% long - Moderate contrarian bearish")
+
+        # STEP 3: SMART MONEY vs DUMB MONEY ANALYSIS (Your Insight)
+        # Commercials = Smart Money (hedgers, insiders)
+        # Speculators = Trend followers, often wrong at extremes
+
+        smart_money_signals = []
+
+        # Classic contrarian setup: Specs vs Commercials positioned opposite
+        if nc_net < -3000 and comm_net > 3000:  # Specs short, Commercials long
+            contrarian_signals += 2
+            smart_money_signals.append("💡 SMART MONEY DIVERGENCE: Commercials long while speculators short")
+            analysis['signals'].append("🏦 Smart money (commercials) betting AGAINST speculative crowd - BULLISH")
+
+        elif nc_net > 3000 and comm_net < -3000:  # Specs long, Commercials short
+            contrarian_signals -= 2
+            smart_money_signals.append("💡 SMART MONEY DIVERGENCE: Commercials short while speculators long")
+            analysis['signals'].append("🏦 Smart money (commercials) betting AGAINST speculative crowd - BEARISH")
+
+        # Moderate divergence
+        elif (nc_net < 0 and comm_net > 0) or (nc_net > 0 and comm_net < 0):
+            divergence_strength = abs(nc_net) + abs(comm_net)
+            if divergence_strength > 5000:
+                contrarian_signals += 1 if nc_net < 0 else -1
+                smart_money_signals.append(f"⚖️ Moderate smart money divergence (strength: {divergence_strength:,})")
+
+        analysis['smart_money_signals'] = smart_money_signals
+
+        # STEP 4: WEEKLY CHANGES ANALYSIS (Your Step 4)
+        # Look for positioning tension - when groups move in opposite directions
+        weekly_changes_analysis = []
+
+        if 'nc_long_change' in metrics and 'nc_short_change' in metrics:
+            nc_long_change = metrics['nc_long_change']
+            nc_short_change = metrics['nc_short_change']
+            nc_net_change = metrics.get('nc_net_change', nc_long_change - nc_short_change)
+
+            # Analyze the weekly positioning changes
+            if abs(nc_long_change) > 1000 or abs(nc_short_change) > 1000:
+                if nc_short_change > nc_long_change and nc_short_change > 1000:
+                    weekly_changes_analysis.append(f"📊 Speculators added {nc_short_change:,} shorts vs {nc_long_change:,} longs")
+                    weekly_changes_analysis.append("⚠️ Speculators doubling down on bearish bet - increases contrarian potential")
+                    contrarian_signals += 1  # More shorts = more contrarian bullish
+
+                elif nc_long_change > nc_short_change and nc_long_change > 1000:
+                    weekly_changes_analysis.append(f"📊 Speculators added {nc_long_change:,} longs vs {nc_short_change:,} shorts")
+                    weekly_changes_analysis.append("⚠️ Speculators doubling down on bullish bet - increases contrarian potential")
+                    contrarian_signals -= 1  # More longs = more contrarian bearish
+
+            # Check if commercials are moving opposite to speculators
+            if 'commercial_long_change' in metrics:
+                comm_long_change = metrics.get('commercial_long_change', 0)
+                comm_short_change = metrics.get('commercial_short_change', 0)
+
+                # Positioning tension: Specs and Commercials moving opposite ways
+                if (nc_net_change < -1000 and (comm_long_change > 500 or comm_short_change < -500)):
+                    weekly_changes_analysis.append("🔥 POSITIONING TENSION: Specs more bearish while commercials more bullish")
+                    contrarian_signals += 1
+                elif (nc_net_change > 1000 and (comm_long_change < -500 or comm_short_change > 500)):
+                    weekly_changes_analysis.append("🔥 POSITIONING TENSION: Specs more bullish while commercials more bearish")
+                    contrarian_signals -= 1
+
+        analysis['weekly_changes_analysis'] = weekly_changes_analysis
+
+        # STEP 5: CONTRARIAN BIAS DETERMINATION (Your Logic)
+        # Use contrarian signals as primary factor, not simple trend following
+
+        analysis['contrarian_analysis'] = {
+            'contrarian_signals': contrarian_signals,
+            'extreme_positioning': analysis['positioning_extremes']['extreme_level'],
+            'smart_money_divergence': len(smart_money_signals) > 0,
+            'positioning_tension': len(weekly_changes_analysis) > 0
+        }
+
+        # Determine bias using CONTRARIAN LOGIC
+        if contrarian_signals >= 3:
+            analysis['overall_bias'] = 'STRONGLY BULLISH (Contrarian)'
             analysis['confidence'] = 'HIGH'
-        elif signal_diff >= 1:
-            analysis['overall_bias'] = 'BULLISH'
-            analysis['confidence'] = 'MEDIUM' if signal_diff >= 2 else 'LOW'
-        elif signal_diff <= -3:
-            analysis['overall_bias'] = 'STRONGLY BEARISH'
+            analysis['signals'].append("🎯 CONTRARIAN CONCLUSION: Extreme bearish positioning = BULLISH opportunity")
+
+        elif contrarian_signals >= 2:
+            analysis['overall_bias'] = 'BULLISH (Contrarian)'
+            analysis['confidence'] = 'HIGH' if analysis['positioning_extremes']['is_extreme_short'] else 'MEDIUM'
+            analysis['signals'].append("📈 CONTRARIAN CONCLUSION: Bearish positioning = BULLISH bias")
+
+        elif contrarian_signals >= 1:
+            analysis['overall_bias'] = 'MODERATELY BULLISH (Contrarian)'
+            analysis['confidence'] = 'MEDIUM'
+
+        elif contrarian_signals <= -3:
+            analysis['overall_bias'] = 'STRONGLY BEARISH (Contrarian)'
             analysis['confidence'] = 'HIGH'
-        elif signal_diff <= -1:
-            analysis['overall_bias'] = 'BEARISH'
-            analysis['confidence'] = 'MEDIUM' if signal_diff <= -2 else 'LOW'
+            analysis['signals'].append("🎯 CONTRARIAN CONCLUSION: Extreme bullish positioning = BEARISH opportunity")
+
+        elif contrarian_signals <= -2:
+            analysis['overall_bias'] = 'BEARISH (Contrarian)'
+            analysis['confidence'] = 'HIGH' if analysis['positioning_extremes']['is_extreme_long'] else 'MEDIUM'
+            analysis['signals'].append("📉 CONTRARIAN CONCLUSION: Bullish positioning = BEARISH bias")
+
+        elif contrarian_signals <= -1:
+            analysis['overall_bias'] = 'MODERATELY BEARISH (Contrarian)'
+            analysis['confidence'] = 'MEDIUM'
+
         else:
             analysis['overall_bias'] = 'NEUTRAL'
             analysis['confidence'] = 'LOW'
+            analysis['signals'].append("⚖️ No clear contrarian setup - positioning not at extremes")
 
-        # Key observations
+        # Add confidence boost for extreme positioning
+        if analysis['positioning_extremes']['extreme_level'] == 'HIGH':
+            if analysis['confidence'] == 'MEDIUM':
+                analysis['confidence'] = 'HIGH'
+            analysis['signals'].append(f"🔥 EXTREME POSITIONING DETECTED: {max(nc_short_pct, nc_long_pct):.1f}% - High confidence contrarian setup")
+
+        # STEP 6: GENERATE BIAS EXPLANATION (Simple Description)
+        analysis['bias_explanation'] = self.generate_bias_explanation(
+            analysis['overall_bias'],
+            nc_short_pct,
+            nc_long_pct,
+            nc_net,
+            comm_net,
+            contrarian_signals,
+            analysis['positioning_extremes']['extreme_level']
+        )
+
+        # Enhanced Key Observations (Your Analysis Style)
         analysis['key_observations'] = [
-            f"Total Open Interest: {data['total_open_interest']:,} contracts",
-            f"Non-Commercial Net Position: {nc_net:,} contracts",
-            f"Commercial Net Position: {comm_net:,} contracts",
-            f"Speculative Long %: {nc_long_pct:.1f}%",
-            f"Speculative Short %: {nc_short_pct:.1f}%"
+            f"📊 Total Open Interest: {data['total_open_interest']:,} contracts",
+            f"🎯 Speculative Positioning: Long {nc_long_pct:.1f}% | Short {nc_short_pct:.1f}%",
+            f"💰 Non-Commercial Net: {nc_net:,} contracts ({'Short' if nc_net < 0 else 'Long'} bias)",
+            f"🏦 Commercial Net: {comm_net:,} contracts ({'Long' if comm_net > 0 else 'Short'} bias)",
+            f"⚖️ Smart Money vs Crowd: {'Divergent' if (nc_net > 0 and comm_net < 0) or (nc_net < 0 and comm_net > 0) else 'Aligned'}",
+            f"🔥 Extreme Level: {analysis['positioning_extremes']['extreme_level']} ({max(nc_short_pct, nc_long_pct):.1f}% max positioning)",
+            f"📈 Contrarian Signal Strength: {contrarian_signals} ({'Bullish' if contrarian_signals > 0 else 'Bearish' if contrarian_signals < 0 else 'Neutral'})"
         ]
 
+        # Add weekly changes to observations if available
+        if weekly_changes_analysis:
+            analysis['key_observations'].extend([
+                "📊 Weekly Changes Analysis:",
+                *[f"   • {obs}" for obs in weekly_changes_analysis[:2]]  # Top 2 changes
+            ])
+
+        # Add smart money signals to observations
+        if smart_money_signals:
+            analysis['key_observations'].extend([
+                "🏦 Smart Money Signals:",
+                *[f"   • {signal}" for signal in smart_money_signals[:2]]  # Top 2 signals
+            ])
+
         return analysis
+
+    def generate_bias_explanation(self, bias: str, nc_short_pct: float, nc_long_pct: float,
+                                 nc_net: int, comm_net: int, contrarian_signals: int, extreme_level: str) -> str:
+        """Generate a simple, clear explanation of why the bias was determined."""
+
+        # Determine the main positioning scenario
+        is_extreme_short = nc_short_pct > 60
+        is_extreme_long = nc_long_pct > 60
+        is_moderate_short = nc_short_pct > 55
+        is_moderate_long = nc_long_pct > 55
+
+        # Smart money divergence
+        smart_money_opposite = (nc_net > 0 and comm_net < 0) or (nc_net < 0 and comm_net > 0)
+
+        explanation = ""
+
+        if 'BULLISH' in bias:
+            if is_extreme_short:
+                explanation = f"""🎯 Why BULLISH (Contrarian Setup):
+
+The Crowd is Extremely Bearish - Speculators are {nc_short_pct:.1f}% short, which is an extreme level (over 60%).
+
+Contrarian Logic: When everyone is betting one way, the market often moves the opposite direction. Here's why:
+
+• Crowded Trade: With {nc_short_pct:.1f}% of speculators short, there are very few sellers left
+• Short Squeeze Potential: All these shorts will eventually need to buy back (cover), creating buying pressure
+• Smart Money: Commercials (the insiders/hedgers) are positioned {('long' if comm_net > 0 else 'short')}, often opposite to the crowd at turning points
+
+Historical Pattern: When speculative shorts exceed 60%, the market typically rebounds as shorts are forced to cover their positions.
+
+Bottom Line: Too many people are betting against this asset - that's usually when it surprises everyone and goes up instead."""
+
+            elif is_moderate_short:
+                explanation = f"""📈 Why BULLISH (Contrarian Setup):
+
+Speculators are Heavily Short - {nc_short_pct:.1f}% of speculators are betting against this asset.
+
+The Setup: This creates a contrarian opportunity because:
+
+• Imbalanced Positioning: More people are short than long, creating potential for a squeeze
+• Smart Money Divergence: {('Commercials are positioned opposite to speculators' if smart_money_opposite else 'Positioning shows potential for reversal')}
+• Covering Pressure: Short positions will need to be bought back, providing upward pressure
+
+Why This Matters: Markets often move against the crowd, especially when positioning becomes one-sided."""
+
+        elif 'BEARISH' in bias:
+            if is_extreme_long:
+                explanation = f"""🎯 Why BEARISH (Contrarian Setup):
+
+The Crowd is Extremely Bullish - Speculators are {nc_long_pct:.1f}% long, which is an extreme level (over 60%).
+
+Contrarian Logic: When everyone is betting one way, the market often moves the opposite direction. Here's why:
+
+• Crowded Trade: With {nc_long_pct:.1f}% of speculators long, there are very few buyers left
+• Selling Pressure: All these longs are vulnerable to selling if the market turns
+• Smart Money: Commercials (the insiders/hedgers) are positioned {('short' if comm_net < 0 else 'long')}, often opposite to the crowd
+
+Historical Pattern: When speculative longs exceed 60%, the market typically declines as longs get shaken out.
+
+Bottom Line: Too many people are betting on this asset going up - that's usually when it disappoints and goes down instead."""
+
+            elif is_moderate_long:
+                explanation = f"""📉 Why BEARISH (Contrarian Setup):
+
+Speculators are Heavily Long - {nc_long_pct:.1f}% of speculators are betting on this asset rising.
+
+The Setup: This creates a contrarian opportunity because:
+
+• Imbalanced Positioning: More people are long than short, creating vulnerability
+• Smart Money Divergence: {('Commercials are positioned opposite to speculators' if smart_money_opposite else 'Positioning shows potential for reversal')}
+• Selling Pressure: Long positions are vulnerable to profit-taking and stops
+
+Why This Matters: Markets often move against the crowd, especially when positioning becomes one-sided."""
+
+        else:  # NEUTRAL
+            explanation = f"""⚖️ Why NEUTRAL:
+
+Balanced Positioning - Speculators are {nc_long_pct:.1f}% long and {nc_short_pct:.1f}% short.
+
+The Setup: No clear contrarian opportunity because:
+
+• No Extreme Positioning: Neither longs nor shorts are at extreme levels (60%+)
+• Limited Contrarian Signals: {contrarian_signals} contrarian signals detected
+• Wait for Setup: Best to wait for clearer positioning extremes
+
+Strategy: Monitor for positioning to reach extreme levels (60%+) before taking contrarian positions."""
+
+        return explanation
 
     def run_analysis(self, asset_name: str = 'USD INDEX') -> Dict:
         """Run the complete COT analysis for specified asset."""

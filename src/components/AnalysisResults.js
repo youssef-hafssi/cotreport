@@ -26,8 +26,11 @@ import {
   DollarSign,
   Activity,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  BookOpen
 } from 'lucide-react';
+
+
 
 const AnalysisResults = ({ analysis }) => {
   const getBiasIcon = (bias) => {
@@ -401,13 +404,117 @@ const AnalysisResults = ({ analysis }) => {
         </CardBody>
       </Card>
 
+      {/* Contrarian Analysis Section */}
+      {analysis.analysis.contrarian_analysis && (
+        <Card className="shadow-lg border-0">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Target className="w-5 h-5 text-primary-600" />
+              <h3 className="text-xl font-semibold text-slate-800">Contrarian COT Analysis</h3>
+              <Chip
+                size="sm"
+                color={analysis.analysis.contrarian_analysis.contrarian_signals > 0 ? 'success' :
+                       analysis.analysis.contrarian_analysis.contrarian_signals < 0 ? 'danger' : 'warning'}
+                variant="flat"
+              >
+                {analysis.analysis.contrarian_analysis.contrarian_signals > 0 ? 'Bullish Setup' :
+                 analysis.analysis.contrarian_analysis.contrarian_signals < 0 ? 'Bearish Setup' : 'Neutral'}
+              </Chip>
+            </div>
+          </CardHeader>
+          <CardBody className="pt-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              {/* Positioning Extremes */}
+              <div className="bg-slate-50 p-4 rounded-lg">
+                <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                  <Activity className="w-4 h-4" />
+                  Positioning Extremes
+                </h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span>Speculative Short:</span>
+                    <span className={`font-semibold ${
+                      analysis.analysis.positioning_extremes?.speculative_short_pct > 60 ? 'text-danger-600' :
+                      analysis.analysis.positioning_extremes?.speculative_short_pct > 55 ? 'text-warning-600' : 'text-slate-600'
+                    }`}>
+                      {analysis.analysis.positioning_extremes?.speculative_short_pct?.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Speculative Long:</span>
+                    <span className={`font-semibold ${
+                      analysis.analysis.positioning_extremes?.speculative_long_pct > 60 ? 'text-success-600' :
+                      analysis.analysis.positioning_extremes?.speculative_long_pct > 55 ? 'text-warning-600' : 'text-slate-600'
+                    }`}>
+                      {analysis.analysis.positioning_extremes?.speculative_long_pct?.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Extreme Level:</span>
+                    <Chip
+                      size="sm"
+                      color={
+                        analysis.analysis.positioning_extremes?.extreme_level === 'HIGH' ? 'danger' :
+                        analysis.analysis.positioning_extremes?.extreme_level === 'MODERATE' ? 'warning' : 'default'
+                      }
+                      variant="flat"
+                    >
+                      {analysis.analysis.positioning_extremes?.extreme_level}
+                    </Chip>
+                  </div>
+                </div>
+              </div>
+
+              {/* Smart Money Signals */}
+              <div className="bg-slate-50 p-4 rounded-lg">
+                <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4" />
+                  Smart Money Analysis
+                </h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span>Contrarian Signals:</span>
+                    <span className={`font-semibold ${
+                      analysis.analysis.contrarian_analysis.contrarian_signals > 0 ? 'text-success-600' :
+                      analysis.analysis.contrarian_analysis.contrarian_signals < 0 ? 'text-danger-600' : 'text-slate-600'
+                    }`}>
+                      {analysis.analysis.contrarian_analysis.contrarian_signals}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Smart Money Divergence:</span>
+                    <Chip
+                      size="sm"
+                      color={analysis.analysis.contrarian_analysis.smart_money_divergence ? 'success' : 'default'}
+                      variant="flat"
+                    >
+                      {analysis.analysis.contrarian_analysis.smart_money_divergence ? 'Yes' : 'No'}
+                    </Chip>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Positioning Tension:</span>
+                    <Chip
+                      size="sm"
+                      color={analysis.analysis.contrarian_analysis.positioning_tension ? 'warning' : 'default'}
+                      variant="flat"
+                    >
+                      {analysis.analysis.contrarian_analysis.positioning_tension ? 'Detected' : 'None'}
+                    </Chip>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
       {/* Signals Detected */}
       {analysis.analysis.signals && analysis.analysis.signals.length > 0 && (
         <Card className="shadow-lg border-0">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <Target className="w-5 h-5 text-primary-600" />
-              <h3 className="text-xl font-semibold text-slate-800">Signals Detected</h3>
+              <h3 className="text-xl font-semibold text-slate-800">Analysis Signals</h3>
               <Chip size="sm" color="primary" variant="flat">
                 {analysis.analysis.signals.length}
               </Chip>
@@ -419,10 +526,12 @@ const AnalysisResults = ({ analysis }) => {
                 <div
                   key={index}
                   className={`p-4 rounded-lg border-l-4 ${
-                    signal.includes('BULLISH')
+                    signal.includes('BULLISH') || signal.includes('🔥') || signal.includes('📈')
                       ? 'bg-success-50 border-success-500'
-                      : signal.includes('BEARISH')
+                      : signal.includes('BEARISH') || signal.includes('📉')
                       ? 'bg-danger-50 border-danger-500'
+                      : signal.includes('⚠️') || signal.includes('🔥')
+                      ? 'bg-warning-50 border-warning-500'
                       : 'bg-primary-50 border-primary-500'
                   }`}
                 >
@@ -441,6 +550,45 @@ const AnalysisResults = ({ analysis }) => {
                   </div>
                 </div>
               ))}
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Bias Explanation */}
+      {analysis.analysis.bias_explanation && (
+        <Card className="shadow-xl border-0 bg-white">
+          <CardHeader className="pb-4 bg-gradient-to-r from-blue-600 to-indigo-600">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-lg">
+                <BookOpen className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-white">Why This Bias?</h3>
+                <p className="text-blue-100 text-sm mt-1">Understanding the contrarian logic</p>
+              </div>
+              <div className="ml-auto">
+                <Chip size="sm" color="default" variant="flat" className="bg-white/20 text-white border-white/30">
+                  Analysis
+                </Chip>
+              </div>
+            </div>
+          </CardHeader>
+          <CardBody className="pt-0">
+            <div className="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-8 rounded-lg">
+              <div
+                className="text-slate-800 leading-relaxed"
+                style={{
+                  fontFamily: "'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif",
+                  fontSize: '16px',
+                  lineHeight: '1.7',
+                  fontWeight: '400'
+                }}
+              >
+                <div className="whitespace-pre-line">
+                  {analysis.analysis.bias_explanation}
+                </div>
+              </div>
             </div>
           </CardBody>
         </Card>
