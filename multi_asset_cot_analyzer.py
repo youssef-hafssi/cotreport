@@ -206,6 +206,43 @@ class MultiAssetCOTAnalyzer:
                 'source': info['source']
             })
         return sorted(assets, key=lambda x: x['name'])
+
+    def extract_current_cot_date(self, html_content: str) -> str:
+        """Extract the current COT data date (should be the most recent Tuesday)."""
+        from datetime import datetime, timedelta
+
+        # Look for the main report date - this should be the current week's Tuesday
+        main_date_patterns = [
+            r'Commitments of Traders.*?as of (\w+) (\d+), (\d+)',
+            r'COMMITMENTS OF TRADERS.*?(\w+) (\d+), (\d+)',
+            r'Positions as of (\w+) (\d+), (\d+)',
+        ]
+
+        for pattern in main_date_patterns:
+            match = re.search(pattern, html_content, re.IGNORECASE | re.DOTALL)
+            if match:
+                groups = match.groups()
+                if len(groups) >= 3:
+                    month, day, year = groups[-3:]  # Take last 3 groups
+                    try:
+                        # Verify this is a Tuesday (COT data is always for Tuesday)
+                        date_obj = datetime.strptime(f"{month} {day}, {year}", "%B %d, %Y")
+                        if date_obj.weekday() == 1:  # Tuesday is weekday 1
+                            return f"{day}/{month[:3]}/{year}"
+                    except ValueError:
+                        continue
+
+        # If no Tuesday found, get the most recent date that could be a Tuesday
+        all_dates = re.findall(r'(\w+) (\d+), (\d+)', html_content)
+        for month_str, day_str, year_str in reversed(all_dates):  # Start from most recent
+            try:
+                date_obj = datetime.strptime(f"{month_str} {day_str}, {year_str}", "%B %d, %Y")
+                if date_obj.weekday() == 1:  # Tuesday
+                    return f"{day_str}/{month_str[:3]}/{year_str}"
+            except ValueError:
+                continue
+
+        return "Unknown"
         
     def fetch_cot_data(self, source: str) -> str:
         """Fetch the latest COT report from specified CFTC website."""
@@ -214,9 +251,17 @@ class MultiAssetCOTAnalyzer:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
             url = self.urls[source]
+            print(f"🌐 Fetching from: {url}")
             response = requests.get(url, headers=headers, timeout=30)
             response.raise_for_status()
-            return response.text
+
+            # Debug: Check if we can find any dates in the content
+            content = response.text
+            date_matches = re.findall(r'(\w+) (\d+), (\d+)', content)
+            if date_matches:
+                print(f"📅 Dates found in report: {date_matches[:3]}...")  # Show first 3 dates
+
+            return content
         except requests.RequestException as e:
             raise Exception(f"Failed to fetch COT data from {source}: {e}")
     
@@ -237,27 +282,41 @@ class MultiAssetCOTAnalyzer:
 
         asset_section = asset_match.group(1)
 
-        # Extract report date - more flexible pattern
-        date_pattern = r'(\w+) (\d+), (\d+)'
-        date_match = re.search(date_pattern, asset_section)
-        if date_match:
-            month, day, year = date_match.groups()
-            report_date = f"{day}/{month[:3]}/{year}"
-        else:
-            report_date = "Unknown"
+        # Extract report date - use the improved method to get current COT date
+        report_date = self.extract_current_cot_date(html_content)
+
+        # Debug: Print what date we extracted
+        print(f"🔍 Date extraction for {asset_name}: {report_date}")
 
         # Parse based on source type
         if source == 'financial':
-            return self._parse_financial_data(asset_section, asset_name, report_date)
+            return self._parse_financial_data(asset_section, asset_name, report_date, html_content)
         else:
             return self._parse_standard_data(asset_section, asset_name, report_date)
 
-    def _parse_financial_data(self, asset_section: str, asset_name: str, report_date: str) -> Dict:
+    def _parse_financial_data(self, asset_section: str, asset_name: str, report_date: str, html_content: str = "") -> Dict:
         """Parse financial futures data format (different structure)."""
         data_lines = [line.strip() for line in asset_section.split('\n') if line.strip()]
 
-        # Extract Open Interest first
+        # Extract Open Interest and better date parsing for financial data
         total_oi = 0
+
+        # Try to get a better date from the financial data
+        if report_date == "Unknown" and html_content:
+            # Financial reports have the date in the header
+            financial_date_patterns = [
+                r'Positions as of (\w+) (\d+), (\d+)',
+                r'as of (\w+) (\d+), (\d+)',
+                r'(\w+) (\d+), (\d+)'
+            ]
+
+            for pattern in financial_date_patterns:
+                date_match = re.search(pattern, html_content, re.IGNORECASE)
+                if date_match:
+                    month, day, year = date_match.groups()
+                    report_date = f"{day}/{month[:3]}/{year}"
+                    break
+
         for line in data_lines:
             if 'Open Interest is' in line:
                 oi_match = re.search(r'Open Interest is\s+(\d+(?:,\d+)*)', line)
@@ -400,6 +459,13 @@ class MultiAssetCOTAnalyzer:
                     change_numbers = re.findall(r'-?\d+', clean_changes)
                     changes = [int(x) for x in change_numbers[:10]] if change_numbers else []
                 break
+
+        # Debug: Print what we extracted
+        print(f"🔍 Financial data extracted for {asset_name}:")
+        print(f"   Report Date: {report_date}")
+        print(f"   Total OI: {total_oi:,}")
+        print(f"   Non-Commercial Long: {non_commercial_long:,}, Short: {non_commercial_short:,}")
+        print(f"   Commercial Long: {commercial_long:,}, Short: {commercial_short:,}")
 
         return {
             'asset_name': asset_name,
@@ -608,6 +674,9 @@ class MultiAssetCOTAnalyzer:
 
         print(f"📊 Parsing {asset_name} data...")
         self.data = self.parse_asset_data(html_content, asset_name)
+
+        # Debug: Print the extracted date
+        print(f"📅 Extracted report date: {self.data.get('report_date', 'Unknown')}")
 
         print("🧮 Calculating metrics...")
         metrics = self.calculate_metrics(self.data)
